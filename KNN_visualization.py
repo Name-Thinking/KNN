@@ -1,196 +1,166 @@
 import os
 import urllib.request
-import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
+import matplotlib.pyplot as plt
 import numpy as np
 
-# =========================================================
-# 0. จัดการฟอนต์ภาษาไทย (เปลี่ยนวิธีดาวน์โหลดและเช็คไฟล์)
-# =========================================================
-FONT_PATH = "thsarabunnew.ttf"
-if not os.path.exists(FONT_PATH):
-    FONT_URL = "https://github.com/Phonbopit/sarabun-webfont/raw/master/fonts/thsarabunnew-webfont.ttf"
-    urllib.request.urlretrieve(FONT_URL, FONT_PATH)
+# -----------------------------------------------------------------------------
+# 1. การตั้งค่าฟอนต์ภาษาไทย (Thai Font Setup)
+# -----------------------------------------------------------------------------
+font_path = "thsarabunnew.ttf"
+if not os.path.exists(font_path):
+    try:
+        font_url = "https://github.com/Phonbopit/sarabun-webfont/raw/master/fonts/thsarabunnew-webfont.ttf"
+        urllib.request.urlretrieve(font_url, font_path)
+    except Exception:
+        pass
 
-fm.fontManager.addfont(FONT_PATH)
-plt.rcParams.update(
-    {
-        "font.family": "TH Sarabun New",
-        "axes.unicode_minus": False,
-        "font.size": 14,
-    }
-)
+if os.path.exists(font_path):
+    fm.fontManager.addfont(font_path)
+    plt.rcParams["font.family"] = "TH Sarabun New"
 
-
-# =========================================================
-# 1. Custom KNN Classifier (เขียนแบบ Vectorized operations)
-# =========================================================
-class KNearestNeighbors:
-
-    def __init__(self, metric="euclidean"):
-        self.metric = metric
-        self.X_train = None
-        self.y_train = None
-
-    def fit(self, X, y):
-        self.X_train = np.array(X, dtype=np.float64)
-        self.y_train = np.array(y, dtype=np.int64)
-        return self
-
-    def _calc_distances(self, target_point):
-        """คำนวณระยะทางจาก target ไปยังทุกจุดใน X_train พร้อมกัน"""
-        if self.metric == "manhattan":
-            return np.sum(np.abs(self.X_train - target_point), axis=1)
-        return np.linalg.norm(self.X_train - target_point, axis=1)
-
-    def predict(self, X_test, k):
-        X_test = np.atleast_2d(X_test)
-        preds = []
-        for test_pt in X_test:
-            dists = self._calc_distances(test_pt)
-            top_k_indices = np.argsort(dists)[:k]
-            top_k_labels = self.y_train[top_k_indices]
-
-            # ใช้ np.bincount หาค่าที่เกิดบ่อยสุดแทน Counter
-            most_frequent = np.bincount(top_k_labels).argmax()
-            preds.append(most_frequent)
-        return np.array(preds)
-
-    def get_k_neighbors_info(self, target_point, k):
-        dists = self._calc_distances(target_point)
-        sorted_indices = np.argsort(dists)[:k]
-        return sorted_indices, dists[sorted_indices]
+plt.rcParams.update({"axes.unicode_minus": False, "font.size": 13})
 
 
-# =========================================================
-# 2. ข้อมูลระบบและค่าเริ่มต้น
-# =========================================================
-X_dataset = np.array(
-    [
-        [1, 4],
-        [2, 5],
-        [3, 6],  # Class 0
-        [5, 5],
-        [6, 4],
-        [7, 3],  # Class 1
-        [2, 2],
-        [1, 1],  # Class 2
-        [4, 0],
-    ]
-)
-
-y_labels = np.array([0, 0, 0, 1, 1, 1, 2, 2, 2])
+# -----------------------------------------------------------------------------
+# 2. ชุดข้อมูลและค่าเริ่มต้น (Dataset & Configurations)
+# -----------------------------------------------------------------------------
+X_train = np.array([
+    [1, 4], [2, 5], [3, 6],   # Class 0: กลุ่มสีน้ำเงิน
+    [5, 5], [6, 4], [7, 3],   # Class 1: กลุ่มสีเขียว
+    [2, 2], [1, 1], [4, 0]    # Class 2: กลุ่มสีแดง
+])
+y_train = np.array([0, 0, 0, 1, 1, 1, 2, 2, 2])
 query_pt = np.array([3.5, 3.5])
 
-# กำหนดสเปกของแต่ละ Class
-LABELS_CONFIG = {
-    0: {"name": "สีน้ำเงิน", "color": "royalblue"},
-    1: {"name": "สีเขียว", "color": "mediumseagreen"},
-    2: {"name": "สีแดง", "color": "tomato"},
+class_cfg = {
+    0: {"name": "สีน้ำเงิน", "color": "#2563EB"},
+    1: {"name": "สีเขียว",  "color": "#059669"},
+    2: {"name": "สีแดง",   "color": "#DC2626"}
 }
 
-# =========================================================
-# 3. รับค่าและประมวลผล
-# =========================================================
-print("กำหนดค่า k (เลือกค่าจำนวนเต็มระหว่าง 1 ถึง 9):")
-user_k_list = [
-    int(input(f"กรอกค่า k ตัวที่ {i+1}: ")) for i in range(3)
-]
 
-clf = KNearestNeighbors(metric="euclidean").fit(X_dataset, y_labels)
+# -----------------------------------------------------------------------------
+# 3. อัลกอริทึม KNN (K-Nearest Neighbors Algorithm)
+# -----------------------------------------------------------------------------
+class KNearestNeighbors:
+    """อัลกอริทึม KNN พร้อมการโหวตแบบถ่วงน้ำหนักด้วยระยะทาง"""
 
-print("\n=== ผลการทำนายด้วย KNN ===")
-for k_val in user_k_list:
-    res = clf.predict(query_pt, k=k_val)[0]
-    print(
-        f"เมื่อ k={k_val} → จุด X จัดอยู่ในประเภท: {LABELS_CONFIG[res]['name']}"
-    )
+    def fit(self, X, y):
+        self.X, self.y = np.asarray(X, dtype=float), np.asarray(y, dtype=int)
+        return self
+
+    def predict(self, point, k, weighted=True):
+        # 1. คำนวณระยะห่าง Euclidean ระหว่างจุดทดสอบกับทุกจุด
+        dists = np.linalg.norm(self.X - point, axis=1)
+
+        # 2. คัดเลือก k เพื่อนบ้านที่ใกล้ที่สุด
+        top_idx = np.argsort(dists)[:k]
+        top_labels, top_dists = self.y[top_idx], dists[top_idx]
+
+        # 3. โหวตเลือกคลาส (ถ่วงน้ำหนักด้วยส่วนกลับของระยะทาง: 1/dist)
+        weights = 1.0 / (top_dists + 1e-5) if weighted else None
+        pred_class = int(np.bincount(top_labels, weights=weights).argmax())
+
+        return pred_class, float(top_dists[-1])
 
 
-# =========================================================
-# 4. วาดภาพและกราฟแสดงผล
-# =========================================================
-fig, ax = plt.subplots(figsize=(6.5, 6.5))
+# -----------------------------------------------------------------------------
+# 4. รับค่า k และทำนายผลลัพธ์ (User Input & Inference)
+# -----------------------------------------------------------------------------
+knn = KNearestNeighbors().fit(X_train, y_train)
 
-# พล็อตจุดฝึกสอนแยกตามคลาส
-for c_id, config in LABELS_CONFIG.items():
-    pts = X_dataset[y_labels == c_id]
+print(f"\nกำหนดค่า k (เลือก 3 ค่า จำนวนเต็มระหว่าง 1 ถึง {len(X_train)}):")
+k_list = []
+while len(k_list) < 3:
+    try:
+        val = int(input(f"  • กรอกค่า k ตัวที่ {len(k_list) + 1}: ").strip())
+        if 1 <= val <= len(X_train):
+            k_list.append(val)
+        else:
+            print(f"    [แจ้งเตือน] กรุณากรอกเลขระหว่าง 1 ถึง {len(X_train)}")
+    except ValueError:
+        print("    [แจ้งเตือน] กรุณากรอกเฉพาะตัวเลขจำนวนเต็ม")
+
+print("\n" + "=" * 45)
+print("            ผลการทำนายด้วย KNN")
+print("=" * 45)
+results = {}
+for k in k_list:
+    pred, radius = knn.predict(query_pt, k)
+    results[k] = (pred, radius)
+    print(f"  • เมื่อ k = {k:<2}  ➔  จุด X จัดอยู่ในกลุ่ม: {class_cfg[pred]['name']}")
+print("=" * 45 + "\n")
+
+
+# -----------------------------------------------------------------------------
+# 5. แสดงผลลัพธ์ด้วยกราฟ (Data Visualization)
+# -----------------------------------------------------------------------------
+fig, ax = plt.subplots(figsize=(7, 7))
+
+# 1. วาดจุดข้อมูลฝึกสอน (Training Data)
+for c_id, info in class_cfg.items():
+    pts = X_train[y_train == c_id]
     ax.scatter(
-        pts[:, 0],
-        pts[:, 1],
-        c=config["color"],
-        s=90,
-        label=f"Class {c_id}",
-        zorder=3,
+        pts[:, 0], pts[:, 1],
+        c=info["color"], s=110,
+        edgecolors="white", linewidths=1.5,
+        label=f"Class {c_id}: {info['name']}",
+        zorder=3
     )
 
-# พล็อตจุด Query
+# 2. วาดจุดทดสอบ (Query Point)
 ax.scatter(
-    query_pt[0],
-    query_pt[1],
-    c="black",
-    marker="x",
-    s=110,
-    linewidths=1.8,
-    label="จุด X",
-    zorder=5,
+    *query_pt,
+    c="#1E293B", marker="X", s=130, linewidths=2.5,
+    label="จุดทดสอบ X (Query)",
+    zorder=5
 )
 
-# จัดกลุ่มวงกลมที่มีรัศมีเท่ากัน
+# 3. จัดกลุ่มค่า k ที่มีรัศมีเท่ากัน เพื่อไม่ให้วาดวงกลมซ้ำซ้อน
 radius_map = {}
-for k in user_k_list:
-    _, neighbor_dists = clf.get_k_neighbors_info(query_pt, k)
-    r = round(neighbor_dists[-1], 4)
-    radius_map.setdefault(r, []).append(str(k))
+for k, (_, r) in results.items():
+    radius_map.setdefault(round(r, 4), []).append(str(k))
 
+# 4. วาดวงกลมรัศมีเพื่อนบ้าน และป้ายกำกับค่า k
 y_shifts = [0.35, -0.35, 0.85]
-
-for idx, (r_val, k_group) in enumerate(sorted(radius_map.items())):
-    label_text = f"k={', '.join(sorted(k_group, key=int))}"
-
-    # วาดวงกลมขอบเขต
-    circ = plt.Circle(
-        query_pt,
-        r_val,
-        fill=False,
-        ls="--",
-        color="black",
-        lw=1,
-        alpha=0.85,
-        zorder=2,
+for idx, (r, group) in enumerate(sorted(radius_map.items())):
+    # เส้นประขอบเขตวงกลม
+    ax.add_patch(
+        plt.Circle(query_pt, r, fill=False, ls="--", color="#475569", lw=1.2, alpha=0.75, zorder=2)
     )
-    ax.add_patch(circ)
 
-    # คำนวณจุดวางป้ายข้อความ
+    # คำนวณตำแหน่งป้ายข้อความบนเส้นรอบวง x = √(r² - y²)
     dy = y_shifts[idx % len(y_shifts)]
-    dx = np.sqrt(max(0, r_val**2 - dy**2))
-
+    dx = np.sqrt(max(0, r**2 - dy**2))
     ax.text(
-        query_pt[0] + dx + 0.08,
-        query_pt[1] + dy,
-        label_text,
-        color="black",
-        fontsize=12,
-        va="center",
-        bbox=dict(
-            boxstyle="round,pad=0.2",
-            facecolor="white",
-            edgecolor="#cccccc",
-            lw=0.8,
-            alpha=0.85,
-        ),
-        zorder=6,
+        query_pt[0] + dx + 0.1, query_pt[1] + dy, f"k = {', '.join(group)}",
+        fontsize=11, va="center",
+        bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="#CBD5E1", lw=1, alpha=0.9),
+        zorder=6
     )
 
-# ตั้งค่าดิสเพลย์ของกราฟ
-ax.set_title("ตัวอย่างการทำงานของ K-Nearest Neighbor", fontsize=16)
-ax.set_xlabel("คุณสมบัติ 1", fontsize=14)
-ax.set_ylabel("คุณสมบัติ 2", fontsize=14)
+# 5. ตกแต่งแกนและรายละเอียดกราฟให้โมเดิร์น
+ax.set_title("การทำงานของ K-Nearest Neighbors (KNN)", fontsize=16, pad=16, fontweight="bold")
+ax.set_xlabel("คุณสมบัติ 1 (Feature 1)", fontsize=13, labelpad=8)
+ax.set_ylabel("คุณสมบัติ 2 (Feature 2)", fontsize=13, labelpad=8)
 ax.set_xlim(-0.5, 8.5)
 ax.set_ylim(-0.5, 6.5)
 ax.set_aspect("equal")
-ax.grid(True, ls=":", alpha=0.6)
-ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left", frameon=True)
+
+# ปรับเส้นกรอบและตารางให้ดูสะอาดตา
+ax.grid(True, ls=":", color="#E2E8F0", alpha=0.8)
+for spine in ["top", "right"]:
+    ax.spines[spine].set_visible(False)
+for spine in ["left", "bottom"]:
+    ax.spines[spine].set_color("#CBD5E1")
+
+ax.legend(
+    loc="upper left", bbox_to_anchor=(1.02, 1),
+    frameon=True, facecolor="white", edgecolor="#E2E8F0", fontsize=11
+)
 
 plt.tight_layout()
+plt.savefig("knn_result.png", dpi=200, bbox_inches="tight")
+print("[บันทึกภาพสำเร็จ] บันทึกไฟล์กราฟไว้ที่: knn_result.png\n")
 plt.show()
